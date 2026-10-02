@@ -13,9 +13,8 @@ use tabled::{
 #[derive(Parser, Debug)]
 #[command(name = "calendered", about = "CLI Calendar Generator")]
 struct Cli {
-    /// Path to an iCal (.ics) file
-    #[arg(short, long)]
-    file: Option<PathBuf>,
+    /// iCal (.ics) files to load
+    files: Vec<PathBuf>,
 
     /// Year to display (defaults to current year)
     #[arg(short, long)]
@@ -84,33 +83,46 @@ enum SizingMethod {
 }
 
 fn parse_ical_events(
-    path: &PathBuf,
+    paths: &[PathBuf],
     target_year: i32,
     target_month: u32,
 ) -> Result<HashMap<u32, Vec<String>>> {
-    let file = File::open(path).context("Failed to open iCal file")?;
-    let reader = BufReader::new(file);
-    let parser = ical::IcalParser::new(reader);
-
     let mut events_by_day: HashMap<u32, Vec<String>> = HashMap::new();
 
-    for line in parser {
-        let calendar = line.context("Failed to parse iCal line")?;
-        for event in calendar.events {
-            let mut dtstart = None;
-            let mut summary = None;
-
-            for prop in event.properties {
-                if prop.name == "DTSTART" {
-                    dtstart = prop.value;
-                } else if prop.name == "SUMMARY" {
-                    summary = prop.value;
-                }
+    for path in paths {
+        let file = match File::open(path) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("Warning: Failed to open iCal file {:?}: {}", path, e);
+                continue;
             }
+        };
+        let reader = BufReader::new(file);
+        let parser = ical::IcalParser::new(reader);
 
-            if let (Some(dt), Some(sum)) = (dtstart, summary) {
-                // simple parsing for standard YYYYMMDDThhmmssZ or YYYYMMDD
-                if dt.len() >= 8 {
+        for line in parser {
+            let calendar = match line {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("Warning: Failed to parse iCal file {:?}: {}", path, e);
+                    continue;
+                }
+            };
+            for event in calendar.events {
+                let mut dtstart = None;
+                let mut summary = None;
+
+                for prop in event.properties {
+                    if prop.name == "DTSTART" {
+                        dtstart = prop.value;
+                    } else if prop.name == "SUMMARY" {
+                        summary = prop.value;
+                    }
+                }
+
+                if let (Some(dt), Some(sum)) = (dtstart, summary)
+                    && dt.len() >= 8
+                {
                     let date_str = &dt[0..8];
                     if let Ok(parsed_date) = NaiveDate::parse_from_str(date_str, "%Y%m%d")
                         && parsed_date.year() == target_year
@@ -141,8 +153,8 @@ fn main() -> Result<()> {
     }
 
     let mut events = HashMap::new();
-    if let Some(ref path) = cli.file {
-        events = parse_ical_events(path, year, month)?;
+    if !cli.files.is_empty() {
+        events = parse_ical_events(&cli.files, year, month)?;
     }
 
     // Determine the number of days in the month
