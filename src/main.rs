@@ -213,7 +213,27 @@ fn main() -> Result<()> {
     });
 
     match sizing_method {
-        SizingMethod::Auto => {}
+        SizingMethod::Auto => {
+            if let Some(size) = cli.size {
+                if let Some(w) = size.w {
+                    if cli.truncate {
+                        table.with(Width::truncate(w));
+                    } else {
+                        table.with(Width::wrap(w));
+                    }
+                }
+                if let Some(h) = size.h {
+                    let rows = table.count_rows();
+                    if rows > 0 {
+                        let borders = rows + 1;
+                        let cell_h = h.saturating_sub(borders) / rows;
+                        if cell_h > 0 {
+                            table.with(Modify::new(Segment::all()).with(Height::limit(cell_h)));
+                        }
+                    }
+                }
+            }
+        }
         SizingMethod::Cell => {
             if let Some(size) = cli.size {
                 if let Some(w) = size.w {
@@ -229,6 +249,7 @@ fn main() -> Result<()> {
                     }
                 }
                 if let Some(h) = size.h {
+                    table.with(Modify::new(Segment::all()).with(Height::increase(h)));
                     table.with(Modify::new(Segment::all()).with(Height::limit(h)));
                 }
             }
@@ -263,6 +284,7 @@ fn main() -> Result<()> {
                         let borders = rows + 1; // Assuming 1 border per row + top/bottom
                         let cell_h = h.saturating_sub(borders) / rows;
                         if cell_h > 0 {
+                            table.with(Modify::new(Segment::all()).with(Height::increase(cell_h)));
                             table.with(Modify::new(Segment::all()).with(Height::limit(cell_h)));
                         }
                     }
