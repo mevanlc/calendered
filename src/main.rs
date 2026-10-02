@@ -26,20 +26,53 @@ struct Cli {
     month: Option<u32>,
 
     /// Sizing method for the calendar
-    #[arg(short, long, default_value = "auto")]
+    #[arg(short = 'S', long, default_value = "auto")]
     sizing: SizingMethod,
 
-    /// Width parameter (applies to 'cell' or 'overall' sizing)
+    /// Size parameter (applies to 'cell' or 'overall' sizing). Format: WxH, W, Wx, or xH.
     #[arg(short, long)]
-    width: Option<usize>,
-
-    /// Height parameter (applies to 'cell' or 'overall' sizing)
-    #[arg(short = 'H', long)]
-    height: Option<usize>,
+    size: Option<Size>,
 
     /// Truncate event titles instead of wrapping them
     #[arg(short, long)]
     truncate: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+struct Size {
+    w: Option<usize>,
+    h: Option<usize>,
+}
+
+impl std::str::FromStr for Size {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split('x').collect();
+        match parts.as_slice() {
+            [w_str] => {
+                let w = w_str.parse::<usize>().context("Invalid width")?;
+                Ok(Size {
+                    w: Some(w),
+                    h: None,
+                })
+            }
+            [w_str, h_str] => {
+                let w = if w_str.is_empty() {
+                    None
+                } else {
+                    Some(w_str.parse::<usize>().context("Invalid width")?)
+                };
+                let h = if h_str.is_empty() {
+                    None
+                } else {
+                    Some(h_str.parse::<usize>().context("Invalid height")?)
+                };
+                Ok(Size { w, h })
+            }
+            _ => anyhow::bail!("Invalid size format, use WxH, W, Wx, or xH"),
+        }
+    }
 }
 
 #[derive(ValueEnum, Clone, Debug, Default, PartialEq)]
@@ -162,54 +195,56 @@ fn main() -> Result<()> {
     match cli.sizing {
         SizingMethod::Auto => {}
         SizingMethod::Cell => {
-            if let Some(w) = cli.width {
-                table.with(Modify::new(Segment::all()).with(Width::increase(w)));
-                if cli.truncate {
-                    table.with(Modify::new(Segment::all()).with(
-                        Width::truncate(w).priority(tabled::settings::peaker::Priority::none()),
-                    ));
-                } else {
-                    table.with(
-                        Modify::new(Segment::all()).with(
+            if let Some(size) = cli.size {
+                if let Some(w) = size.w {
+                    table.with(Modify::new(Segment::all()).with(Width::increase(w)));
+                    if cli.truncate {
+                        table.with(Modify::new(Segment::all()).with(
+                            Width::truncate(w).priority(tabled::settings::peaker::Priority::none()),
+                        ));
+                    } else {
+                        table.with(Modify::new(Segment::all()).with(
                             Width::wrap(w).priority(tabled::settings::peaker::Priority::none()),
-                        ),
-                    );
+                        ));
+                    }
                 }
-            }
-            if let Some(h) = cli.height {
-                table.with(Modify::new(Segment::all()).with(Height::limit(h)));
+                if let Some(h) = size.h {
+                    table.with(Modify::new(Segment::all()).with(Height::limit(h)));
+                }
             }
         }
         SizingMethod::Overall => {
-            if let Some(w) = cli.width {
-                let borders = 8;
-                let cell_w = w.saturating_sub(borders) / 7;
-                if cell_w > 0 {
-                    table.with(Modify::new(Segment::all()).with(Width::increase(cell_w)));
-                    if cli.truncate {
-                        table.with(
-                            Modify::new(Segment::all()).with(
-                                Width::truncate(cell_w)
-                                    .priority(tabled::settings::peaker::Priority::none()),
-                            ),
-                        );
-                    } else {
-                        table.with(
-                            Modify::new(Segment::all()).with(
-                                Width::wrap(cell_w)
-                                    .priority(tabled::settings::peaker::Priority::none()),
-                            ),
-                        );
+            if let Some(size) = cli.size {
+                if let Some(w) = size.w {
+                    let borders = 8;
+                    let cell_w = w.saturating_sub(borders) / 7;
+                    if cell_w > 0 {
+                        table.with(Modify::new(Segment::all()).with(Width::increase(cell_w)));
+                        if cli.truncate {
+                            table.with(
+                                Modify::new(Segment::all()).with(
+                                    Width::truncate(cell_w)
+                                        .priority(tabled::settings::peaker::Priority::none()),
+                                ),
+                            );
+                        } else {
+                            table.with(
+                                Modify::new(Segment::all()).with(
+                                    Width::wrap(cell_w)
+                                        .priority(tabled::settings::peaker::Priority::none()),
+                                ),
+                            );
+                        }
                     }
                 }
-            }
-            if let Some(h) = cli.height {
-                let rows = table.count_rows();
-                if rows > 0 {
-                    let borders = rows + 1; // Assuming 1 border per row + top/bottom
-                    let cell_h = h.saturating_sub(borders) / rows;
-                    if cell_h > 0 {
-                        table.with(Modify::new(Segment::all()).with(Height::limit(cell_h)));
+                if let Some(h) = size.h {
+                    let rows = table.count_rows();
+                    if rows > 0 {
+                        let borders = rows + 1; // Assuming 1 border per row + top/bottom
+                        let cell_h = h.saturating_sub(borders) / rows;
+                        if cell_h > 0 {
+                            table.with(Modify::new(Segment::all()).with(Height::limit(cell_h)));
+                        }
                     }
                 }
             }
