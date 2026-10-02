@@ -26,8 +26,8 @@ struct Cli {
     month: Option<u32>,
 
     /// Sizing method for the calendar
-    #[arg(short = 'S', long, default_value = "auto")]
-    sizing: SizingMethod,
+    #[arg(short = 'S', long)]
+    sizing: Option<SizingMethod>,
 
     /// Size parameter (applies to 'cell' or 'overall' sizing). Format: WxH, W, Wx, or xH.
     #[arg(short, long)]
@@ -192,7 +192,15 @@ fn main() -> Result<()> {
     let mut table = builder.build();
     table.with(Style::modern()).with(Alignment::left());
 
-    match cli.sizing {
+    let sizing_method = cli.sizing.unwrap_or_else(|| {
+        if cli.size.is_some() {
+            SizingMethod::Overall
+        } else {
+            SizingMethod::Auto
+        }
+    });
+
+    match sizing_method {
         SizingMethod::Auto => {}
         SizingMethod::Cell => {
             if let Some(size) = cli.size {
